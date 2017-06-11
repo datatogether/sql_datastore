@@ -115,12 +115,12 @@ func (ds Datastore) queryRow(m sqlutil.Model, t sqlutil.CmdType) (*sql.Row, erro
 	return ds.DB.QueryRow(query, params...), nil
 }
 
-func (ds Datastore) query(m sqlutil.Model, t sqlutil.CmdType) (*sql.Rows, error) {
+func (ds Datastore) query(m sqlutil.Model, t sqlutil.CmdType, prebind ...interface{}) (*sql.Rows, error) {
 	query, params, err := ds.prepQuery(m, t)
 	if err != nil {
 		return nil, err
 	}
-	return ds.DB.Query(query, params...)
+	return ds.DB.Query(query, append(prebind, params...)...)
 }
 
 func (ds Datastore) prepQuery(m sqlutil.Model, t sqlutil.CmdType) (string, []interface{}, error) {
@@ -133,9 +133,70 @@ func (ds Datastore) prepQuery(m sqlutil.Model, t sqlutil.CmdType) (string, []int
 	return query, params, nil
 }
 
-// lolololol wut
+// Ok, this is nothing more than a first step. In the future
+// it seems datastore will need to construct these queries, which
+// will require more info (tablename, expected response schema) from
+// the model.
+// Currently it's required that the passed-in prefix be equal to DatastoreType()
+// which query will use to determine what model to ask for a ListCmd
 func (ds Datastore) Query(q query.Query) (query.Results, error) {
-	return nil, fmt.Errorf("querying SQL datastore not supported")
+	// TODO - support query Filters
+	if len(q.Filters) > 0 {
+		return nil, fmt.Errorf("sql datastore queries do not support filters")
+	}
+	// TODO - support query Orders
+	if len(q.Orders) > 0 {
+		return nil, fmt.Errorf("sql datastore queries do not support ordering")
+	}
+	// TODO - support KeysOnly
+	if q.KeysOnly {
+		return nil, fmt.Errorf("sql datastore doesn't support keysonly ordering")
+	}
+
+	// TODO - ugh this so bad
+	m, err := ds.modelForKey(datastore.NewKey(fmt.Sprintf("/%s:", q.Prefix)))
+	if err != nil {
+		return nil, err
+	}
+
+	// This is totally janky, but will work for now. It's expected that
+	// the returned CmdList will have at least 2 bindvars:
+	// $1 : LIMIT
+	// $2 : OFFSET
+	// From there it can provide zero or more additional bindvars to
+	// organize the query, which should be returned by the SQLParams method
+	// TODO - this seems to hint at a need for some sort of Controller-like
+	// pattern in userland. Have a think.
+	rows, err := ds.query(m, sqlutil.CmdList, q.Limit, q.Offset)
+	if err != nil {
+		return nil, err
+	}
+
+	// TODO - should this be q.Limit or query.NormalBufferSize
+	reschan := make(chan query.Result, q.Limit)
+	go func() {
+		defer close(reschan)
+
+		for rows.Next() {
+
+			model := m.NewSQLModel("")
+			if err := model.UnmarshalSQL(rows); err != nil {
+				reschan <- query.Result{
+					Error: err,
+				}
+			}
+
+			reschan <- query.Result{
+				Entry: query.Entry{
+					Key:   m.GetId(),
+					Value: model,
+				},
+			}
+
+		}
+	}()
+
+	return query.ResultsWithChan(q, reschan), nil
 }
 
 func (ds *Datastore) Batch() (datastore.Batch, error) {
