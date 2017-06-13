@@ -5,21 +5,20 @@ package sql_datastore
 import (
 	"database/sql"
 	"fmt"
-	"github.com/archivers-space/sqlutil"
 	datastore "github.com/ipfs/go-datastore"
 	"github.com/ipfs/go-datastore/query"
 )
 
 type Datastore struct {
 	DB     *sql.DB
-	models []sqlutil.Model
+	models []Model
 }
 
 func NewDatastore(db *sql.DB) *Datastore {
 	return &Datastore{DB: db}
 }
 
-func (ds *Datastore) Register(models ...sqlutil.Model) error {
+func (ds *Datastore) Register(models ...Model) error {
 	for _, model := range models {
 		// TODO - sanity check to make sure the model behaves.
 		// return error if not
@@ -29,20 +28,20 @@ func (ds *Datastore) Register(models ...sqlutil.Model) error {
 }
 
 func (ds Datastore) Put(key datastore.Key, value interface{}) error {
-	sqlModelValue, ok := value.(sqlutil.Model)
+	sqlModelValue, ok := value.(Model)
 	if !ok {
 		return fmt.Errorf("value is not a valid sql model")
 	}
 
-	exists, err := ds.Has(key)
+	exists, err := ds.hasModel(sqlModelValue)
 	if err != nil {
 		return err
 	}
 
 	if exists {
-		return ds.exec(sqlModelValue, sqlutil.CmdUpdateOne)
+		return ds.exec(sqlModelValue, CmdUpdateOne)
 	} else {
-		return ds.exec(sqlModelValue, sqlutil.CmdInsertOne)
+		return ds.exec(sqlModelValue, CmdInsertOne)
 	}
 }
 
@@ -52,7 +51,7 @@ func (ds Datastore) Get(key datastore.Key) (value interface{}, err error) {
 		return nil, err
 	}
 
-	row, err := ds.queryRow(m, sqlutil.CmdSelectOne)
+	row, err := ds.queryRow(m, CmdSelectOne)
 	if err != nil {
 		return nil, err
 	}
@@ -70,11 +69,20 @@ func (ds Datastore) Has(key datastore.Key) (exists bool, err error) {
 		return false, err
 	}
 
-	row, err := ds.queryRow(m, sqlutil.CmdExistsOne)
+	row, err := ds.queryRow(m, CmdExistsOne)
 	if err != nil {
 		return false, err
 	}
 
+	err = row.Scan(&exists)
+	return
+}
+
+func (ds Datastore) hasModel(m Model) (exists bool, err error) {
+	row, err := ds.queryRow(m, CmdExistsOne)
+	if err != nil {
+		return false, err
+	}
 	err = row.Scan(&exists)
 	return
 }
@@ -85,10 +93,10 @@ func (ds Datastore) Delete(key datastore.Key) error {
 		return err
 	}
 
-	return ds.exec(m, sqlutil.CmdDeleteOne)
+	return ds.exec(m, CmdDeleteOne)
 }
 
-func (ds Datastore) modelForKey(key datastore.Key) (sqlutil.Model, error) {
+func (ds Datastore) modelForKey(key datastore.Key) (Model, error) {
 	for _, m := range ds.models {
 		if m.DatastoreType() == key.Type() {
 			// return a model with "ID" set to the key param
@@ -98,7 +106,7 @@ func (ds Datastore) modelForKey(key datastore.Key) (sqlutil.Model, error) {
 	return nil, fmt.Errorf("no usable model found for key, did you call register on the model?: %s", key.String())
 }
 
-func (ds Datastore) exec(m sqlutil.Model, t sqlutil.CmdType) error {
+func (ds Datastore) exec(m Model, t Cmd) error {
 	query, params, err := ds.prepQuery(m, t)
 	if err != nil {
 		return err
@@ -107,7 +115,7 @@ func (ds Datastore) exec(m sqlutil.Model, t sqlutil.CmdType) error {
 	return err
 }
 
-func (ds Datastore) queryRow(m sqlutil.Model, t sqlutil.CmdType) (*sql.Row, error) {
+func (ds Datastore) queryRow(m Model, t Cmd) (*sql.Row, error) {
 	query, params, err := ds.prepQuery(m, t)
 	if err != nil {
 		return nil, err
@@ -115,7 +123,7 @@ func (ds Datastore) queryRow(m sqlutil.Model, t sqlutil.CmdType) (*sql.Row, erro
 	return ds.DB.QueryRow(query, params...), nil
 }
 
-func (ds Datastore) query(m sqlutil.Model, t sqlutil.CmdType, prebind ...interface{}) (*sql.Rows, error) {
+func (ds Datastore) query(m Model, t Cmd, prebind ...interface{}) (*sql.Rows, error) {
 	query, params, err := ds.prepQuery(m, t)
 	if err != nil {
 		return nil, err
@@ -123,10 +131,10 @@ func (ds Datastore) query(m sqlutil.Model, t sqlutil.CmdType, prebind ...interfa
 	return ds.DB.Query(query, append(prebind, params...)...)
 }
 
-func (ds Datastore) prepQuery(m sqlutil.Model, t sqlutil.CmdType) (string, []interface{}, error) {
+func (ds Datastore) prepQuery(m Model, t Cmd) (string, []interface{}, error) {
 	query := m.SQLQuery(t)
 	if query == "" {
-		// TODO - make sqlutil.CmdType satisfy stringer, provide better error
+		// TODO - make Cmd satisfy stringer, provide better error
 		return "", nil, fmt.Errorf("missing required command: %d", t)
 	}
 	params := m.SQLParams(t)
@@ -167,7 +175,7 @@ func (ds Datastore) Query(q query.Query) (query.Results, error) {
 	// organize the query, which should be returned by the SQLParams method
 	// TODO - this seems to hint at a need for some sort of Controller-like
 	// pattern in userland. Have a think.
-	rows, err := ds.query(m, sqlutil.CmdList, q.Limit, q.Offset)
+	rows, err := ds.query(m, CmdList, q.Limit, q.Offset)
 	if err != nil {
 		return nil, err
 	}
