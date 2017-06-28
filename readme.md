@@ -1,6 +1,6 @@
 # sql_datastore
 --
-    import "github.com/archivers-space/sql_datastore"
+    import "github.com/datatogether/sql_datastore"
 
 sql_datastore is an experimental implementation of the ipfs datastore interface
 for sql databases. It's very much a work in progress, born out of a somewhat
@@ -187,4 +187,4 @@ type Model interface {
 
 Model is the interface that must be implemented to work with sql_datastore.
 There are some fairly heavy constraints here. For a working example checkout:
-https://github.com/archivers-space/archive and have a look at primer.go
+https://github.com/datatogether/archive and have a look at primer.go

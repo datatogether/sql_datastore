@@ -1,7 +1,7 @@
 package sql_datastore
 
 import (
-	"github.com/archivers-space/sqlutil"
+	"github.com/datatogether/sqlutil"
 )
 
 // Model is the interface that must be implemented to work
