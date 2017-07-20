@@ -100,7 +100,7 @@ func (ds Datastore) Get(key datastore.Key) (value interface{}, err error) {
 		return nil, err
 	}
 
-	v := m.NewSQLModel(key.Name())
+	v := m.NewSQLModel(key)
 	if err := v.UnmarshalSQL(row); err != nil {
 		return nil, err
 	}
@@ -188,7 +188,7 @@ func (ds Datastore) Query(q query.Query) (query.Results, error) {
 
 		for rows.Next() {
 
-			model := m.NewSQLModel("")
+			model := m.NewSQLModel(datastore.NewKey(""))
 			if err := model.UnmarshalSQL(rows); err != nil {
 				reschan <- query.Result{
 					Error: err,
@@ -232,18 +232,7 @@ func orderString(q query.Query) string {
 			case OrderByDesc:
 				orders = append(orders, obv.String())
 			}
-			// if ob, ok := ob.TypedOrder.(OrderBy); ok {
-			// } else if obd, ok := obv.TypedOrder.(OrderByDesc); ok {
-			// 	orders = append(orders, obd.String())
-			// }
 		}
-		// } else if obvd, ok := o.(OrderByDesc); ok {
-		// 	if ob, ok := obvd.TypedOrder.(OrderBy); ok {
-		// 		orders = append(orders, ob.String())
-		// 	} else if obd, ok := obvd.TypedOrder.(OrderByDesc); ok {
-		// 		orders = append(orders, obd.String())
-		// 	}
-		// }
 	}
 	os := ""
 	for i, o := range orders {
@@ -265,7 +254,7 @@ func (ds Datastore) modelForKey(key datastore.Key) (Model, error) {
 	for _, m := range ds.models {
 		if m.DatastoreType() == key.Type() {
 			// return a model with "ID" set to the key param
-			return m.NewSQLModel(key.Name()), nil
+			return m.NewSQLModel(key), nil
 		}
 	}
 	return nil, fmt.Errorf("no usable model found for key, did you call register on the model?: %s", key.String())
