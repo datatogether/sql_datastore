@@ -140,13 +140,11 @@ func (ds Datastore) Delete(key datastore.Key) error {
 // Currently it's required that the passed-in prefix be equal to DatastoreType()
 // which query will use to determine what model to ask for a ListCmd
 func (ds Datastore) Query(q query.Query) (query.Results, error) {
+	var rows *sql.Rows
+
 	// TODO - support query Filters
 	if len(q.Filters) > 0 {
 		return nil, fmt.Errorf("sql datastore queries do not support filters")
-	}
-	// TODO - support query Orders
-	if len(q.Orders) > 0 {
-		return nil, fmt.Errorf("sql datastore queries do not support ordering")
 	}
 	// TODO - support KeysOnly
 	if q.KeysOnly {
@@ -161,18 +159,29 @@ func (ds Datastore) Query(q query.Query) (query.Results, error) {
 
 	// This is totally janky, but will work for now. It's expected that
 	// the returned CmdList will have at least 2 bindvars:
-	// $1 : LIMIT
-	// $2 : OFFSET
+	// $1 : LIMIT value
+	// $2 : OFFSET value
+	// if compatible Orders are provided to the query, the order string
+	// will be provided as a third bindvar:
+	// $3 : ORDERBY value
 	// From there it can provide zero or more additional bindvars to
 	// organize the query, which should be returned by the SQLParams method
 	// TODO - this seems to hint at a need for some sort of Controller-like
 	// pattern in userland. Have a think.
-	rows, err := ds.query(m, CmdList, q.Limit, q.Offset)
-	if err != nil {
-		return nil, err
+	os := orderString(q)
+	if os != "" {
+		rows, err = ds.query(m, CmdList, q.Limit, q.Offset, os)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		rows, err = ds.query(m, CmdList, q.Limit, q.Offset)
+		if err != nil {
+			return nil, err
+		}
 	}
 
-	// TODO - should this be q.Limit or query.NormalBufferSize
+	// TODO - should this be q.Limit or query.NormalBufferSize?
 	reschan := make(chan query.Result, q.Limit)
 	go func() {
 		defer close(reschan)
@@ -197,6 +206,54 @@ func (ds Datastore) Query(q query.Query) (query.Results, error) {
 	}()
 
 	return query.ResultsWithChan(q, reschan), nil
+}
+
+// orderString generates orders from any OrderBy or OrderByDesc values
+func orderString(q query.Query) string {
+	if len(q.Orders) == 0 {
+		return ""
+	}
+	orders := []string{}
+	for _, o := range q.Orders {
+		// TODO - should this cross-correct by casting based on
+		// the outer order?
+		switch ot := o.(type) {
+		case query.OrderByValue:
+			switch obv := ot.TypedOrder.(type) {
+			case OrderBy:
+				orders = append(orders, obv.String())
+			case OrderByDesc:
+				orders = append(orders, obv.String())
+			}
+		case query.OrderByValueDescending:
+			switch obv := ot.TypedOrder.(type) {
+			case OrderBy:
+				orders = append(orders, obv.String())
+			case OrderByDesc:
+				orders = append(orders, obv.String())
+			}
+			// if ob, ok := ob.TypedOrder.(OrderBy); ok {
+			// } else if obd, ok := obv.TypedOrder.(OrderByDesc); ok {
+			// 	orders = append(orders, obd.String())
+			// }
+		}
+		// } else if obvd, ok := o.(OrderByDesc); ok {
+		// 	if ob, ok := obvd.TypedOrder.(OrderBy); ok {
+		// 		orders = append(orders, ob.String())
+		// 	} else if obd, ok := obvd.TypedOrder.(OrderByDesc); ok {
+		// 		orders = append(orders, obd.String())
+		// 	}
+		// }
+	}
+	os := ""
+	for i, o := range orders {
+		if i == 0 {
+			os += o
+		} else {
+			os += fmt.Sprintf(", %s", o)
+		}
+	}
+	return os
 }
 
 // Batch commands are currently not supported
