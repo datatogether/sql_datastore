@@ -142,20 +142,21 @@ func (ds Datastore) Delete(key datastore.Key) error {
 func (ds Datastore) Query(q query.Query) (query.Results, error) {
 	var rows *sql.Rows
 
-	// TODO - support query Filters
-	if len(q.Filters) > 0 {
-		return nil, fmt.Errorf("sql datastore queries do not support filters")
-	}
 	// TODO - support KeysOnly
 	if q.KeysOnly {
-		return nil, fmt.Errorf("sql datastore doesn't support keysonly ordering")
+		return nil, fmt.Errorf("sql datastore doesn't support keysonly querying")
 	}
 
-	// TODO - ugh this so bad
-	m, err := ds.modelForKey(datastore.NewKey(fmt.Sprintf("/%s:", q.Prefix)))
+	// determine what type of model we're querying for
+	m, err := ds.modelForQuery(q)
 	if err != nil {
 		return nil, err
 	}
+
+	// here we attach query information to a new model
+	// TODO - currently this is basing off of the prefix, might need
+	// to do smarter things in relation to filters?
+	m = m.NewSQLModel(datastore.NewKey(q.Prefix))
 
 	// This is totally janky, but will work for now. It's expected that
 	// the returned CmdList will have at least 2 bindvars:
@@ -188,7 +189,7 @@ func (ds Datastore) Query(q query.Query) (query.Results, error) {
 
 		for rows.Next() {
 
-			model := m.NewSQLModel(datastore.NewKey(""))
+			model := m.NewSQLModel(datastore.NewKey(q.Prefix))
 			if err := model.UnmarshalSQL(rows); err != nil {
 				reschan <- query.Result{
 					Error: err,
@@ -206,6 +207,17 @@ func (ds Datastore) Query(q query.Query) (query.Results, error) {
 	}()
 
 	return query.ResultsWithChan(q, reschan), nil
+}
+
+// modelForQuery determines what type of model this query should return
+func (ds Datastore) modelForQuery(q query.Query) (Model, error) {
+	for _, f := range q.Filters {
+		switch t := f.(type) {
+		case FilterKeyTypeEq:
+			return ds.modelForKey(t.Key())
+		}
+	}
+	return ds.modelForKey(datastore.NewKey(fmt.Sprintf("/%s:", q.Prefix)))
 }
 
 // orderString generates orders from any OrderBy or OrderByDesc values
@@ -300,6 +312,7 @@ func (ds Datastore) query(m Model, t Cmd, prebind ...interface{}) (*sql.Rows, er
 	if err != nil {
 		return nil, err
 	}
+
 	return ds.DB.Query(query, append(prebind, params...)...)
 }
 
