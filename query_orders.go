@@ -8,7 +8,7 @@ import (
 // Order a query by a field
 type OrderBy string
 
-// String value
+// String value, used to inject the field name istself as a SQL query param
 func (o OrderBy) String() string {
 	return string(o)
 }
@@ -22,6 +22,7 @@ func (o OrderBy) Sort([]query.Entry) {}
 // Order a query by a field, descending
 type OrderByDesc string
 
+// String value, used to inject the field name istself as a SQL query param
 func (o OrderByDesc) String() string {
 	return fmt.Sprintf("%s DESC", o)
 }

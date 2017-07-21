@@ -12,6 +12,17 @@
 // together. Whenever the datastore interface is not expressive enough,
 // one can always fall back to standard SQL work.
 //
+// sql_datastore reconciles the key-value orientation of the datastore
+// interface with the tables/relational orientation of SQL databases
+// through the concept of a "Model". Model is a bit of an unfortunate name,
+// as it implies this package is an ORM, which isn't a design goal.
+//
+// Annnnnnnnyway, the important patterns of this approach are:
+//     1. The Model interface defines how to get stuff into and out of SQL
+//     2. All Models that will be interacted with must be "Registered" to the store.
+//        Registered Models map to a datastore.Key Type.
+//     3. All Get/Put/Delete/Has/Query to sql_datastore must map to a single Model
+//
 // This implementation leads to a great deal of required boilerplate code
 // to implement. In the future this package could be expanded to become
 // syntax-aware, accepting a table name & schema definition for registered
@@ -37,11 +48,12 @@ func SetDB(db *sql.DB) {
 	DefaultStore.DB = db
 }
 
+// Register a number of models to the DefaultStore
 func Register(models ...Model) error {
 	return DefaultStore.Register(models...)
 }
 
-// Datastore
+// Datastore implements the ipfs datastore interface for SQL databases
 type Datastore struct {
 	// DB is the underlying DB handler
 	// it should be safe for use outside of the
@@ -262,6 +274,7 @@ func (ds *Datastore) Batch() (datastore.Batch, error) {
 	return nil, datastore.ErrBatchUnsupported
 }
 
+// for a given key, determine what kind of Model we're looking for
 func (ds Datastore) modelForKey(key datastore.Key) (Model, error) {
 	for _, m := range ds.models {
 		if m.DatastoreType() == key.Type() {
@@ -272,6 +285,7 @@ func (ds Datastore) modelForKey(key datastore.Key) (Model, error) {
 	return nil, fmt.Errorf("no usable model found for key, did you call register on the model?: %s", key.String())
 }
 
+// does this datastore
 func (ds Datastore) hasModel(m Model) (exists bool, err error) {
 	row, err := ds.queryRow(m, CmdExistsOne)
 	if err != nil {
@@ -281,6 +295,7 @@ func (ds Datastore) hasModel(m Model) (exists bool, err error) {
 	return
 }
 
+// execute a Cmd against a given model
 func (ds Datastore) exec(m Model, t Cmd) error {
 	if ds.DB == nil {
 		return fmt.Errorf("datastore has no DB")
@@ -293,6 +308,7 @@ func (ds Datastore) exec(m Model, t Cmd) error {
 	return err
 }
 
+// query for a single row, given a type of command and model
 func (ds Datastore) queryRow(m Model, t Cmd) (*sql.Row, error) {
 	if ds.DB == nil {
 		return nil, fmt.Errorf("datastore has no DB")
@@ -304,6 +320,8 @@ func (ds Datastore) queryRow(m Model, t Cmd) (*sql.Row, error) {
 	return ds.DB.QueryRow(query, params...), nil
 }
 
+// run a query against the db for a given command and model, with optionally prebound
+// arguments derived from the query
 func (ds Datastore) query(m Model, t Cmd, prebind ...interface{}) (*sql.Rows, error) {
 	if ds.DB == nil {
 		return nil, fmt.Errorf("datastore has no DB")
@@ -316,6 +334,7 @@ func (ds Datastore) query(m Model, t Cmd, prebind ...interface{}) (*sql.Rows, er
 	return ds.DB.Query(query, append(prebind, params...)...)
 }
 
+// prepare a query, grabbing the command sql & params from the model
 func (ds Datastore) prepQuery(m Model, t Cmd) (string, []interface{}, error) {
 	query := m.SQLQuery(t)
 	if query == "" {
