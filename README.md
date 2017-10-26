@@ -4,7 +4,7 @@
 
 [![GitHub](https://img.shields.io/badge/project-Data_Together-487b57.svg?style=flat-square)](http://github.com/datatogether)
 [![Slack](https://img.shields.io/badge/slack-Archivers-b44e88.svg?style=flat-square)](https://archivers-slack.herokuapp.com/)
-[![License](https://img.shields.io/github/license/mashape/apistatus.svg)](./LICENSE) 
+[![License](https://img.shields.io/github/license/datatogether/sql_datastore.svg)](./LICENSE) 
 
 sql_datastore is an experimental Golang implementation of the [ipfs
 datastore interface](https://github.com/ipfs/interface-datastore) for
